@@ -131,12 +131,56 @@ class Trainer:
         """
         self.cost_param = {"alpha": alpha, "beta": beta}
 
+    def _live_bm_net_device(self):
+        """Return the device of ``bm_net``'s live parameters.
+
+        ``__init__`` caches the CPU-mirror decision from the construction-time
+        ``bm_net.device``. A later ``.to`` / ``_apply`` move updates the
+        parameters (and usually the device attribute) without revisiting that
+        decision, so callers that need a CPU mirror must read the live
+        parameter device. Fall back to the cached attribute when the module
+        has no parameters yet (compat with lightweight test doubles).
+        """
+        try:
+            parameter = next(self.bm_net.parameters())
+        except (AttributeError, StopIteration, TypeError):
+            parameter = None
+        if parameter is not None:
+            return parameter.device
+        return getattr(self.bm_net, "device", torch.device("cpu"))
+
+    def _ensure_cpu_mirror(self):
+        """Ensure ``bm_net_cpu`` is a distinct CPU mirror when ``bm_net`` is not.
+
+        Construction may alias ``bm_net_cpu`` to ``bm_net`` while both sit on
+        CPU. After a later move of ``bm_net`` off CPU that alias is shared onto
+        the new device and worker sampling loses a real CPU copy. Rebuild a
+        dedicated CPU ``BoltzmannMachine`` lazily whenever the live parameter
+        device is non-CPU and the current mirror is missing or not on CPU.
+        """
+        live_device = self._live_bm_net_device()
+        if getattr(live_device, "type", None) == "cpu":
+            return
+        mirror_is_alias = self.bm_net_cpu is self.bm_net
+        mirror_off_cpu = False
+        if not mirror_is_alias:
+            try:
+                mirror_off_cpu = next(self.bm_net_cpu.parameters()).device.type != "cpu"
+            except (AttributeError, StopIteration, TypeError):
+                mirror_off_cpu = True
+        if mirror_is_alias or mirror_off_cpu:
+            self.bm_net_cpu = BoltzmannMachine(
+                num_nodes=self.num_visible + self.num_hidden
+            ).to(torch.device("cpu"))
+            self.bm_net_cpu.share_memory()
+
     def _sync_gpu_to_cpu(self):
         """将主模型的权重原地拷贝到 CPU 共享副本中。
         在需要大量并行采样且同时需要使用gpu时候可以参考这种用法
         """
         if self.bm_net.device.type == "cpu":
             return
+        self._ensure_cpu_mirror()
         with torch.no_grad():
             for cpu_p, gpu_p in zip(
                 self.bm_net_cpu.parameters(), self.bm_net.parameters()
