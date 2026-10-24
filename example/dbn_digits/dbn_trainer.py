@@ -15,6 +15,26 @@ from kaiwu.torch_plugin.dbn import UnsupervisedDBN
 from kaiwu.cim import CIMOptimizer, PrecisionReducer
 
 
+def _live_module_device(module, fallback="unknown"):
+    """Return the device of ``module``'s live parameters.
+
+    ``UnsupervisedDBN`` caches ``device`` when it is constructed, and a parent
+    ``nn.Module.to`` / ``_apply`` moves the nested RBM parameters without
+    refreshing that cache. Reading the parameters on every call keeps callers
+    on the device where the weights actually live. The cached attribute is only
+    a fallback for a module that has no parameters yet.
+    """
+    try:
+        parameter = next(module.parameters())
+    except (AttributeError, StopIteration, TypeError):
+        parameter = None
+    if parameter is not None:
+        return parameter.device
+
+    cached_device = getattr(module, "device", None)
+    return cached_device if cached_device is not None else fallback
+
+
 # =================== Unsupervised DBN Trainer =====================
 class DBNTrainer:
     """A trainer for the DBN model.
@@ -67,7 +87,7 @@ class DBNTrainer:
         self.random_state = random_state
 
         if use_cim:
-            kw.common.CheckpointManager.save_dir = './tmp'
+            kw.common.CheckpointManager.save_dir = "./tmp"
             sampler = CIMOptimizer(task_name="test_kpp", wait=True)
             self.sampler = PrecisionReducer(
                 sampler,
@@ -141,7 +161,7 @@ class DBNTrainer:
             "drop_last": self.drop_last,
             "plot_img": self.plot_img,
             "random_state": self.random_state,
-            "device": str(getattr(self.dbn_ref, "device", "unknown")),
+            "device": str(_live_module_device(self.dbn_ref)),
         }
 
     def _train_rbm_layer(self, rbm, data_in, layer_idx):
@@ -499,8 +519,8 @@ class DBNPretrainer(BaseEstimator, TransformerMixin):
 
     @property
     def device(self):
-        """返回device - 使用底层模型的属性"""
-        return self._dbn.device
+        """返回底层模型参数当前所在的device"""
+        return _live_module_device(self._dbn)
 
     @property
     def _n_layers(self):
