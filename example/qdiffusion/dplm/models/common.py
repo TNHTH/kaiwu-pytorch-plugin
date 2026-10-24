@@ -59,6 +59,8 @@ def masked_mean_pool(
     """Pools token states with one padding-aware mean."""
     # All downstream rerankers expect one fixed-size sequence feature, so we
     # collapse token states here while ignoring padding positions.
-    mask = attention_mask.to(hidden_states.dtype).unsqueeze(-1)
+    mask = attention_mask.to(
+        device=hidden_states.device, dtype=hidden_states.dtype
+    ).unsqueeze(-1)
     denominator = mask.sum(dim=1).clamp_min(1.0)
     return (hidden_states * mask).sum(dim=1) / denominator
