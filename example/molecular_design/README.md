@@ -32,6 +32,10 @@ molecular_design/
 
 入口、控制器与测试的路径已适配上述目录。完整运行所需的外部文件及其放置位置见下文。
 
+### 数据加载检查
+
+两套 `qc_mol_design.data.featurizer.make_dataloader()` 在创建加载器前检查分子数据集是否为空。如果数据划分为空，或分子解析／过滤后没有保留记录，会立即抛出 `ValueError`，提示检查数据划分与分子过滤；检查不依赖 `shuffle`，使用该入口的训练与基线共享同一行为。非空数据集的批次大小、打乱和最后一个不足批次保持不变。
+
 ### KPP RBM／BM 复用
 
 `models/crbm.py` 直接导入 `kaiwu.torch_plugin.RestrictedBoltzmannMachine` 和 `BoltzmannMachine`。本次适配核对的上游版本为 [KPP dca313e](https://github.com/qboson/kaiwu-pytorch-plugin/tree/dca313e29c4f6b0b96f406cee3c919eea1114973/src/kaiwu/torch_plugin)。

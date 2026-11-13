@@ -188,6 +188,12 @@ def collate_graphs(batch):
 
 
 def make_dataloader(dataset: MoleculeDataset, shuffle: bool = False) -> DataLoader:
+    """Build a loader shared by trainers, rejecting empty filtered splits."""
+    if len(dataset) == 0:
+        raise ValueError(
+            "Data loading requires a non-empty molecular dataset; "
+            "check the dataset split and molecule filtering"
+        )
     return DataLoader(
         dataset,
         batch_size=CFG.batch_size,
